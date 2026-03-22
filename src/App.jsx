@@ -1,11 +1,15 @@
 import { useState } from "react";
 import ChatWindow from "./components/ChatWindow";
 import Sidebar from "./components/Sidebar";
+import ProfileDrawer from "./components/ProfileDrawer";
 import { useChatHistory } from "./hooks/useChatHistory";
+import { useFinanceProfile } from "./hooks/useFinanceProfile";
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const history = useChatHistory();
+  const { profile, saveProfile } = useFinanceProfile();
 
   return (
     <div className="flex h-screen w-screen bg-[#0c0c0c] overflow-hidden">
@@ -26,8 +30,17 @@ export default function App() {
           initialMessages={history.activeChat?.messages || []}
           onMessagesChange={history.saveMessages}
           onMenuClick={() => setSidebarOpen(true)}
+          onProfileClick={() => setProfileOpen(true)}
+          profile={profile}
         />
       </div>
+
+      <ProfileDrawer
+        open={profileOpen}
+        onClose={() => setProfileOpen(false)}
+        profile={profile}
+        onSave={saveProfile}
+      />
     </div>
   );
 }

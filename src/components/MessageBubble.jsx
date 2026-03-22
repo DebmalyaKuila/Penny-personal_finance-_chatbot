@@ -1,5 +1,27 @@
 import { TrendingUp, User } from "lucide-react";
 
+function parseTable(lines) {
+  const rows = lines.map((l) =>
+    l
+      .trim()
+      .replace(/^\||\|$/g, "")
+      .split("|")
+      .map((c) => c.trim())
+  );
+  const header = rows[0];
+  // row[1] is the separator --- line, skip it
+  const body = rows.slice(2);
+  return { header, body };
+}
+
+function isTableLine(line) {
+  return line.trim().startsWith("|");
+}
+
+function isSeparatorLine(line) {
+  return /^\|?\s*[-:]+\s*(\|\s*[-:]+\s*)+\|?$/.test(line.trim());
+}
+
 function parseMarkdown(text) {
   const lines = text.split("\n");
   const result = [];
@@ -15,7 +37,80 @@ function parseMarkdown(text) {
       continue;
     }
 
-    // Heading ## or ###
+    // Table detection — collect all consecutive | lines
+    if (isTableLine(line)) {
+      const tableLines = [];
+      while (i < lines.length && isTableLine(lines[i])) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      // Need at least header + separator + 1 row
+      if (tableLines.length >= 3 && isSeparatorLine(tableLines[1])) {
+        const { header, body } = parseTable(tableLines);
+        result.push(
+          <div key={`table-${i}`} className="overflow-x-auto my-3 rounded-xl border border-[#2a2a2a]">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-[#1a1a1a]">
+                  {header.map((h, hi) => (
+                    <th
+                      key={hi}
+                      className={`px-3 py-2.5 text-zinc-300 font-medium border-b border-[#2a2a2a] whitespace-nowrap ${
+                        hi === 0 ? "text-left" : "text-right"
+                      }`}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {body.map((row, ri) => {
+                  // Check if it's a total/summary row
+                  const isTotalRow = row[0]?.toLowerCase().includes("total") ||
+                    row[0]?.toLowerCase().includes("surplus") ||
+                    row[0]?.toLowerCase().includes("remaining") ||
+                    row[0]?.toLowerCase().includes("balance") ||
+                    row[0]?.toLowerCase().includes("net");
+
+                  return (
+                    <tr
+                      key={ri}
+                      className={`border-b border-[#1f1f1f] last:border-0 transition-colors ${
+                        isTotalRow
+                          ? "bg-emerald-500/8 text-emerald-300"
+                          : ri % 2 === 0
+                          ? "bg-[#111111]"
+                          : "bg-[#131313]"
+                      }`}
+                    >
+                      {row.map((cell, ci) => (
+                        <td
+                          key={ci}
+                          className={`px-3 py-2.5 ${
+                            ci === 0 ? "text-left" : "text-right"
+                          } ${isTotalRow ? "font-medium" : "text-zinc-400"}`}
+                        >
+                          {inlineFormat(cell)}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+        continue;
+      }
+      // Not a valid table, render as plain lines
+      tableLines.forEach((tl, ti) => {
+        result.push(<p key={`tl-${i}-${ti}`} className="leading-relaxed">{inlineFormat(tl)}</p>);
+      });
+      continue;
+    }
+
+    // Heading ###
     if (line.startsWith("### ")) {
       result.push(
         <p key={i} className="font-semibold text-zinc-200 mt-2 mb-0.5">
@@ -25,6 +120,8 @@ function parseMarkdown(text) {
       i++;
       continue;
     }
+
+    // Heading ##
     if (line.startsWith("## ")) {
       result.push(
         <p key={i} className="font-semibold text-zinc-100 mt-2 mb-0.5">
@@ -35,7 +132,7 @@ function parseMarkdown(text) {
       continue;
     }
 
-    // Bullet point: lines starting with * or - (but not **)
+    // Bullet point
     if (/^[\*\-]\s/.test(line) && !line.startsWith("**")) {
       const items = [];
       while (i < lines.length && /^[\*\-]\s/.test(lines[i]) && !lines[i].startsWith("**")) {
@@ -67,28 +164,18 @@ function parseMarkdown(text) {
 }
 
 function inlineFormat(text) {
-  // Strip stray lone asterisks (not part of **bold** or *italic*)
-  const cleaned = text.replace(/(?<!\*)\*(?!\*)/g, "").replace(/\*\*/g, (m, offset, str) => {
-    // Keep ** only if they appear in pairs — handled by split below
-    return m;
-  });
-
+  const cleaned = text.replace(/(?<!\*)\*(?!\*)/g, "");
   const parts = cleaned.split(/(\*\*[^*]+\*\*)/g);
-  const result = [];
-
-  parts.forEach((part, idx) => {
+  return parts.map((part, idx) => {
     if (part.startsWith("**") && part.endsWith("**")) {
-      result.push(
+      return (
         <strong key={idx} className="text-zinc-100 font-semibold">
           {part.slice(2, -2)}
         </strong>
       );
-    } else {
-      result.push(<span key={idx}>{part}</span>);
     }
+    return <span key={idx}>{part}</span>;
   });
-
-  return result;
 }
 
 export default function MessageBubble({ message, streaming }) {
@@ -125,7 +212,7 @@ export default function MessageBubble({ message, streaming }) {
           )}
         </div>
         {streaming && (
-          <span className="inline-block w-0.5 h-3.5 bg-emerald-400 ml-0.5 align-middle animate-pulse" />
+          <span className="inline-block w-[2px] h-[14px] bg-emerald-400 ml-[2px] align-middle animate-pulse" />
         )}
       </div>
     </div>

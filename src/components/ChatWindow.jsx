@@ -1,19 +1,85 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, TrendingUp, Sparkles, Menu } from "lucide-react";
+import { Send, TrendingUp, Sparkles, Menu, IndianRupee } from "lucide-react";
 import MessageBubble from "./MessageBubble";
 import TypingIndicator from "./TypingIndicator";
 import SuggestionChips from "./SuggestionChips";
-import { SYSTEM_PROMPT } from "../values/SystemPrompt";
+import { buildSystemPrompt } from "../values/SystemPrompt";
 import { SUGGESTIONS } from "../values/shared";
 
 const GEMINI_URL = `${import.meta.env.VITE_GEMINI_URL}?key=${import.meta.env.VITE_GEMINI_API_KEY}`;
 
-// How many characters to reveal per tick, and tick interval in ms
-// Tweak CHARS_PER_TICK up for faster, down for slower
 const TICK_MS = 16;
 const CHARS_PER_TICK = 3;
+const MAX_CONTINUATIONS = 3;
 
-export default function ChatWindow({ initialMessages, onMessagesChange, onMenuClick }) {
+async function fetchGemini(contents, systemPrompt) {
+  const response = await fetch(GEMINI_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents,
+      generationConfig: {
+        maxOutputTokens: 8192,
+        temperature: 0.7,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err?.error?.message || "API error");
+  }
+
+  const data = await response.json();
+  const candidate = data.candidates?.[0];
+  const text = candidate?.content?.parts?.map((p) => p.text).join("") || "";
+  const finishReason = candidate?.finishReason || "STOP";
+
+  return { text, finishReason };
+}
+
+async function fetchFullResponse(conversationMessages, systemPrompt) {
+  // Build Gemini-format history
+  const contents = conversationMessages.map((msg) => ({
+    role: msg.role === "assistant" ? "model" : "user",
+    parts: [{ text: msg.content }],
+  }));
+
+  let fullText = "";
+  let attempts = 0;
+
+  while (attempts <= MAX_CONTINUATIONS) {
+    const currentContents =
+      attempts === 0
+        ? contents
+        : [
+            ...contents,
+            // Append what we have so far as model turn, then ask to continue
+            { role: "model", parts: [{ text: fullText }] },
+            {
+              role: "user",
+              parts: [{ text: "Please continue your response from where you left off." }],
+            },
+          ];
+
+    const { text, finishReason } = await fetchGemini(currentContents, systemPrompt);
+    fullText += text;
+    attempts++;
+
+    // STOP or END_TURN means response is complete
+    if (finishReason === "STOP" || finishReason === "END_TURN" || finishReason === "MAX_TOKENS" && attempts > MAX_CONTINUATIONS) {
+      break;
+    }
+
+    // If cut off (MAX_TOKENS) and we haven't hit our limit, continue
+    if (finishReason !== "MAX_TOKENS") break;
+  }
+
+  return fullText || "Sorry, I couldn't generate a response.";
+}
+
+export default function ChatWindow({ initialMessages, onMessagesChange, onMenuClick, onProfileClick, profile }) {
   const [messages, setMessages] = useState(initialMessages || []);
   const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -22,7 +88,7 @@ export default function ChatWindow({ initialMessages, onMessagesChange, onMenuCl
   const [error, setError] = useState(null);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
-  const streamRef = useRef(null); // holds the interval id
+  const streamRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -34,7 +100,6 @@ export default function ChatWindow({ initialMessages, onMessagesChange, onMenuCl
     }
   }, [messages]);
 
-  // Clean up interval on unmount
   useEffect(() => {
     return () => { if (streamRef.current) clearInterval(streamRef.current); };
   }, []);
@@ -70,37 +135,18 @@ export default function ChatWindow({ initialMessages, onMessagesChange, onMenuCl
     setLoading(true);
 
     try {
-      const history = updatedMessages.slice(0, -1).map((msg) => ({
-        role: msg.role === "assistant" ? "model" : "user",
-        parts: [{ text: msg.content }],
+      const geminiMessages = updatedMessages.map(({ role, content }) => ({
+        role,
+        content,
       }));
 
-      const response = await fetch(GEMINI_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          contents: [
-            ...history,
-            { role: "user", parts: [{ text: userText }] },
-          ],
-          generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
-        }),
-      });
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err?.error?.message || "API error");
-      }
-
-      const data = await response.json();
-      const assistantText =
-        data.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") ||
-        "Sorry, I couldn't generate a response.";
+      const assistantText = await fetchFullResponse(
+        geminiMessages,
+        buildSystemPrompt(profile)
+      );
 
       setLoading(false);
 
-      // Animate the response char by char, then commit to messages
       animateText(assistantText, (fullText) => {
         setStreamingText("");
         setMessages((prev) => [
@@ -123,15 +169,13 @@ export default function ChatWindow({ initialMessages, onMessagesChange, onMenuCl
   };
 
   const isEmpty = messages.length === 0 && !isStreaming;
+  const hasProfile = profile && Object.values(profile).some(Boolean);
 
   return (
     <div className="flex flex-col h-full w-full bg-[#111111]">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 sm:px-6 py-4 border-b border-[#1a1a1a] bg-[#0e0e0e] shrink-0">
-        <button
-          onClick={onMenuClick}
-          className="lg:hidden text-zinc-500 hover:text-zinc-300 transition-colors"
-        >
+        <button onClick={onMenuClick} className="lg:hidden text-zinc-500 hover:text-zinc-300 transition-colors">
           <Menu size={20} />
         </button>
         <div className="w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/30 items-center justify-center hidden lg:flex">
@@ -139,13 +183,27 @@ export default function ChatWindow({ initialMessages, onMessagesChange, onMenuCl
         </div>
         <div>
           <h1 className="font-serif text-white text-base leading-none">Penny</h1>
-          <p className="text-[11px] text-zinc-500 mt-0.5 font-light">
-            Personal finance companion
-          </p>
+          <p className="text-[11px] text-zinc-500 mt-0.5 font-light">Personal finance companion</p>
         </div>
-        <div className="ml-auto flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-[11px] text-zinc-500">Online</span>
+
+        <div className="ml-auto flex items-center gap-3">
+          <button
+            onClick={onProfileClick}
+            title="Financial Profile"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all text-xs ${
+              hasProfile
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15"
+                : "border-[#252525] bg-[#1a1a1a] text-zinc-500 hover:text-zinc-300 hover:border-zinc-600"
+            }`}
+          >
+            <IndianRupee size={13} />
+            <span className="hidden sm:inline">{hasProfile ? "Profile set" : "Set profile"}</span>
+          </button>
+
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[11px] text-zinc-500">Online</span>
+          </div>
         </div>
       </div>
 
@@ -159,18 +217,13 @@ export default function ChatWindow({ initialMessages, onMessagesChange, onMenuCl
               {messages.map((msg) => (
                 <MessageBubble key={msg.id} message={msg} />
               ))}
-
-              {/* Typing indicator while waiting for API */}
               {loading && <TypingIndicator />}
-
-              {/* Animated streaming bubble */}
               {isStreaming && streamingText && (
                 <MessageBubble
                   message={{ role: "assistant", content: streamingText, id: "streaming" }}
                   streaming
                 />
               )}
-
               {error && (
                 <p className="text-center text-xs text-red-400 bg-red-400/10 rounded-lg px-4 py-2">
                   {error}
@@ -221,8 +274,7 @@ function EmptyState({ onSuggest }) {
         </div>
         <h2 className="font-serif text-white text-2xl mb-2">Hi, I'm Penny 👋</h2>
         <p className="text-zinc-500 text-sm max-w-xs mx-auto leading-relaxed">
-          Your friendly finance companion. Ask me about budgeting, saving,
-          investing, or anything money-related.
+          Your friendly finance companion. Ask me about budgeting, saving, investing, or anything money-related.
         </p>
       </div>
       <SuggestionChips
