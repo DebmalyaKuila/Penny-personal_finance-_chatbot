@@ -3,38 +3,10 @@ import { Send, TrendingUp, Sparkles, Menu } from "lucide-react";
 import MessageBubble from "./MessageBubble";
 import TypingIndicator from "./TypingIndicator";
 import SuggestionChips from "./SuggestionChips";
+import { SYSTEM_PROMPT } from "../values/SystemPrompt";
+import { SUGGESTIONS } from "../values/shared";
 
 const GEMINI_URL = `${import.meta.env.VITE_GEMINI_URL}?key=${import.meta.env.VITE_GEMINI_API_KEY}`;
-
-const SYSTEM_PROMPT = `You are Penny, a warm, knowledgeable, and concise personal finance assistant. You help users with budgeting, saving, investing, debt management, credit scores, tax basics, and financial goal-setting.
-
-Personality:
-- Friendly but professional — like a financially savvy best friend
-- Use simple, clear language. Avoid heavy jargon unless asked.
-- Be encouraging, not judgmental about financial mistakes
-- Keep responses focused and scannable: use short paragraphs or bullet points when listing steps
-- When giving advice, always acknowledge that you're an AI and recommend consulting a professional for major decisions
-- Never ask for personal account numbers, passwords, or sensitive data
-
-Topics you cover well:
-- Budgeting (50/30/20 rule, zero-based budgeting, envelope method)
-- Saving strategies (emergency funds, sinking funds, high-yield savings)
-- Investing basics (index funds, ETFs, compound interest, risk tolerance)
-- Debt payoff (avalanche vs snowball method, refinancing)
-- Credit scores (factors, how to improve, what hurts them)
-- Financial goals (FIRE movement, house down payments, retirement)
-- Indian personal finance context (PPF, NPS, ELSS, SIPs, EPF) when relevant
-
-If someone asks something outside finance, gently redirect them back to financial topics.`;
-
-const SUGGESTIONS = [
-  "How do I start budgeting?",
-  "Explain the 50/30/20 rule",
-  "How to build an emergency fund?",
-  "Debt avalanche vs snowball?",
-  "How does a SIP work?",
-  "Tips to improve my credit score",
-];
 
 // How many characters to reveal per tick, and tick interval in ms
 // Tweak CHARS_PER_TICK up for faster, down for slower
@@ -254,14 +226,7 @@ function EmptyState({ onSuggest }) {
         </p>
       </div>
       <SuggestionChips
-        suggestions={[
-          "How do I start budgeting?",
-          "Explain the 50/30/20 rule",
-          "How to build an emergency fund?",
-          "Debt avalanche vs snowball?",
-          "How does a SIP work?",
-          "Tips to improve my credit score",
-        ]}
+        suggestions={SUGGESTIONS}
         onSelect={onSuggest}
         grid
       />

@@ -67,17 +67,28 @@ function parseMarkdown(text) {
 }
 
 function inlineFormat(text) {
-  // Split on **bold** and *italic*
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
-  return parts.map((part, idx) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={idx} className="text-zinc-100 font-semibold">{part.slice(2, -2)}</strong>;
-    }
-    if (part.startsWith("*") && part.endsWith("*")) {
-      return <em key={idx} className="text-zinc-300 italic">{part.slice(1, -1)}</em>;
-    }
-    return part;
+  // Strip stray lone asterisks (not part of **bold** or *italic*)
+  const cleaned = text.replace(/(?<!\*)\*(?!\*)/g, "").replace(/\*\*/g, (m, offset, str) => {
+    // Keep ** only if they appear in pairs — handled by split below
+    return m;
   });
+
+  const parts = cleaned.split(/(\*\*[^*]+\*\*)/g);
+  const result = [];
+
+  parts.forEach((part, idx) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      result.push(
+        <strong key={idx} className="text-zinc-100 font-semibold">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    } else {
+      result.push(<span key={idx}>{part}</span>);
+    }
+  });
+
+  return result;
 }
 
 export default function MessageBubble({ message, streaming }) {
