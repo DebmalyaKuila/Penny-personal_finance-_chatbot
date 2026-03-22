@@ -18,7 +18,6 @@ export function useChatHistory() {
   const [chats, setChats] = useState(loadChats);
   const [activeChatId, setActiveChatId] = useState(null);
 
-  // Persist whenever chats change
   useEffect(() => {
     saveChats(chats);
   }, [chats]);
@@ -39,15 +38,31 @@ export function useChatHistory() {
     if (activeChatId) {
       setChats((prev) =>
         prev.map((c) =>
-          c.id === activeChatId ? { ...c, messages, title, updatedAt: Date.now() } : c
+          c.id === activeChatId
+            ? { ...c, messages, title, updatedAt: Date.now() }
+            : c
         )
       );
     } else {
       const id = Date.now().toString();
-      const chat = { id, title, messages, createdAt: Date.now(), updatedAt: Date.now() };
+      const chat = {
+        id,
+        title,
+        messages,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
       setChats((prev) => [chat, ...prev]);
       setActiveChatId(id);
     }
+  }
+
+  function renameChat(id, newTitle) {
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === id ? { ...c, title: newTitle, updatedAt: Date.now() } : c
+      )
+    );
   }
 
   function deleteChat(id) {
@@ -67,6 +82,7 @@ export function useChatHistory() {
     setActiveChatId,
     newChat,
     saveMessages,
+    renameChat,
     deleteChat,
     clearAll,
   };

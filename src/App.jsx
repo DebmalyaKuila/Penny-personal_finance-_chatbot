@@ -15,6 +15,7 @@ export default function App() {
         onSelect={history.setActiveChatId}
         onNew={history.newChat}
         onDelete={history.deleteChat}
+        onRename={history.renameChat}
         onClearAll={history.clearAll}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
