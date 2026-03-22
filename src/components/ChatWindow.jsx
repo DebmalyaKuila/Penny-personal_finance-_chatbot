@@ -36,27 +36,58 @@ const SUGGESTIONS = [
   "Tips to improve my credit score",
 ];
 
+// How many characters to reveal per tick, and tick interval in ms
+// Tweak CHARS_PER_TICK up for faster, down for slower
+const TICK_MS = 16;
+const CHARS_PER_TICK = 3;
+
 export default function ChatWindow({ initialMessages, onMessagesChange, onMenuClick }) {
   const [messages, setMessages] = useState(initialMessages || []);
+  const [streamingText, setStreamingText] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+  const streamRef = useRef(null); // holds the interval id
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, streamingText, loading]);
 
-useEffect(() => {
-  if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
-    onMessagesChange(messages);
+  useEffect(() => {
+    if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+      onMessagesChange(messages);
+    }
+  }, [messages]);
+
+  // Clean up interval on unmount
+  useEffect(() => {
+    return () => { if (streamRef.current) clearInterval(streamRef.current); };
+  }, []);
+
+  function animateText(fullText, onDone) {
+    let index = 0;
+    setStreamingText("");
+    setIsStreaming(true);
+
+    streamRef.current = setInterval(() => {
+      index += CHARS_PER_TICK;
+      if (index >= fullText.length) {
+        setStreamingText(fullText);
+        clearInterval(streamRef.current);
+        setIsStreaming(false);
+        onDone(fullText);
+      } else {
+        setStreamingText(fullText.slice(0, index));
+      }
+    }, TICK_MS);
   }
-}, [messages]);
 
   const sendMessage = async (text) => {
     const userText = text || input.trim();
-    if (!userText || loading) return;
+    if (!userText || loading || isStreaming) return;
 
     setInput("");
     setError(null);
@@ -67,7 +98,6 @@ useEffect(() => {
     setLoading(true);
 
     try {
-      // Build Gemini conversation history (exclude the latest user msg, it goes in contents)
       const history = updatedMessages.slice(0, -1).map((msg) => ({
         role: msg.role === "assistant" ? "model" : "user",
         parts: [{ text: msg.content }],
@@ -77,17 +107,12 @@ useEffect(() => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          system_instruction: {
-            parts: [{ text: SYSTEM_PROMPT }],
-          },
+          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
           contents: [
             ...history,
             { role: "user", parts: [{ text: userText }] },
           ],
-          generationConfig: {
-            maxOutputTokens: 1024,
-            temperature: 0.7,
-          },
+          generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
         }),
       });
 
@@ -101,15 +126,20 @@ useEffect(() => {
         data.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") ||
         "Sorry, I couldn't generate a response.";
 
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: assistantText, id: Date.now() },
-      ]);
-    } catch (e) {
-      setError(e.message || "Something went wrong. Please try again.");
-    } finally {
       setLoading(false);
-      inputRef.current?.focus();
+
+      // Animate the response char by char, then commit to messages
+      animateText(assistantText, (fullText) => {
+        setStreamingText("");
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: fullText, id: Date.now() },
+        ]);
+        inputRef.current?.focus();
+      });
+    } catch (e) {
+      setLoading(false);
+      setError(e.message || "Something went wrong. Please try again.");
     }
   };
 
@@ -120,7 +150,7 @@ useEffect(() => {
     }
   };
 
-  const isEmpty = messages.length === 0;
+  const isEmpty = messages.length === 0 && !isStreaming;
 
   return (
     <div className="flex flex-col h-full w-full bg-[#111111]">
@@ -157,7 +187,18 @@ useEffect(() => {
               {messages.map((msg) => (
                 <MessageBubble key={msg.id} message={msg} />
               ))}
+
+              {/* Typing indicator while waiting for API */}
               {loading && <TypingIndicator />}
+
+              {/* Animated streaming bubble */}
+              {isStreaming && streamingText && (
+                <MessageBubble
+                  message={{ role: "assistant", content: streamingText, id: "streaming" }}
+                  streaming
+                />
+              )}
+
               {error && (
                 <p className="text-center text-xs text-red-400 bg-red-400/10 rounded-lg px-4 py-2">
                   {error}
@@ -168,7 +209,6 @@ useEffect(() => {
           <div ref={bottomRef} />
         </div>
       </div>
-
 
       {/* Input bar */}
       <div className="shrink-0 bg-[#0e0e0e] border-t border-[#1a1a1a] px-4 sm:px-6 lg:px-0 py-4">
@@ -185,7 +225,7 @@ useEffect(() => {
             />
             <button
               onClick={() => sendMessage()}
-              disabled={!input.trim() || loading}
+              disabled={!input.trim() || loading || isStreaming}
               className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center text-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-emerald-400 transition-colors shrink-0"
             >
               <Send size={14} />
@@ -209,7 +249,8 @@ function EmptyState({ onSuggest }) {
         </div>
         <h2 className="font-serif text-white text-2xl mb-2">Hi, I'm Penny 👋</h2>
         <p className="text-zinc-500 text-sm max-w-xs mx-auto leading-relaxed">
-          Your friendly finance companion. Ask me about budgeting, saving, investing, or anything money-related.
+          Your friendly finance companion. Ask me about budgeting, saving,
+          investing, or anything money-related.
         </p>
       </div>
       <SuggestionChips

@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 
 function ConfirmDialog({ message, onConfirm, onCancel }) {
   return createPortal(
-    <div className="fixed inset-0 z-[999] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-999 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70" onClick={onCancel} />
       <div className="relative bg-[#161616] border border-[#2a2a2a] rounded-2xl p-5 w-full max-w-sm shadow-2xl">
         <div className="flex items-center gap-3 mb-3">
@@ -60,7 +60,7 @@ function RenameDialog({ currentTitle, onConfirm, onCancel }) {
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[999] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-999 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70" onClick={onCancel} />
       <div className="relative bg-[#161616] border border-[#2a2a2a] rounded-2xl p-5 w-full max-w-sm shadow-2xl">
         <div className="flex items-center gap-3 mb-4">
@@ -117,7 +117,7 @@ function ContextMenu({ position, onRename, onDelete, onClose }) {
     <div
       ref={ref}
       style={{ top: position.y, left: position.x }}
-      className="fixed z-[998] bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl shadow-2xl py-1 w-36 overflow-hidden"
+      className="fixed z-998 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl shadow-2xl py-1 w-36 overflow-hidden"
     >
       <button
         onClick={() => { onRename(); onClose(); }}
