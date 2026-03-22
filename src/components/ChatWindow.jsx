@@ -23,9 +23,8 @@ async function fetchGemini(contents, systemPrompt) {
     }),
   });
 
-  if (!response.ok) {
-    const err = await response.json();
-    throw new Error(err?.error?.message || "API error");
+if (!response.ok) {
+    throw new Error("Something went wrong. Please try again later.");
   }
 
   const data = await response.json();
