@@ -19,10 +19,7 @@ async function fetchGemini(contents, systemPrompt) {
     body: JSON.stringify({
       system_instruction: { parts: [{ text: systemPrompt }] },
       contents,
-      generationConfig: {
-        maxOutputTokens: 8192,
-        temperature: 0.7,
-      },
+      generationConfig: { maxOutputTokens: 8192, temperature: 0.7 },
     }),
   });
 
@@ -35,12 +32,10 @@ async function fetchGemini(contents, systemPrompt) {
   const candidate = data.candidates?.[0];
   const text = candidate?.content?.parts?.map((p) => p.text).join("") || "";
   const finishReason = candidate?.finishReason || "STOP";
-
   return { text, finishReason };
 }
 
 async function fetchFullResponse(conversationMessages, systemPrompt) {
-  // Build Gemini-format history
   const contents = conversationMessages.map((msg) => ({
     role: msg.role === "assistant" ? "model" : "user",
     parts: [{ text: msg.content }],
@@ -55,7 +50,6 @@ async function fetchFullResponse(conversationMessages, systemPrompt) {
         ? contents
         : [
             ...contents,
-            // Append what we have so far as model turn, then ask to continue
             { role: "model", parts: [{ text: fullText }] },
             {
               role: "user",
@@ -67,12 +61,13 @@ async function fetchFullResponse(conversationMessages, systemPrompt) {
     fullText += text;
     attempts++;
 
-    // STOP or END_TURN means response is complete
-    if (finishReason === "STOP" || finishReason === "END_TURN" || finishReason === "MAX_TOKENS" && attempts > MAX_CONTINUATIONS) {
+    if (
+      finishReason === "STOP" ||
+      finishReason === "END_TURN" ||
+      (finishReason === "MAX_TOKENS" && attempts > MAX_CONTINUATIONS)
+    ) {
       break;
     }
-
-    // If cut off (MAX_TOKENS) and we haven't hit our limit, continue
     if (finishReason !== "MAX_TOKENS") break;
   }
 
@@ -122,29 +117,14 @@ export default function ChatWindow({ initialMessages, onMessagesChange, onMenuCl
     }, TICK_MS);
   }
 
-  const sendMessage = async (text) => {
-    const userText = text || input.trim();
-    if (!userText || loading || isStreaming) return;
-
-    setInput("");
+  // Core dispatch — takes a messages array and fires the API
+  async function dispatch(msgList) {
     setError(null);
-
-    const userMsg = { role: "user", content: userText, id: Date.now() };
-    const updatedMessages = [...messages, userMsg];
-    setMessages(updatedMessages);
     setLoading(true);
 
     try {
-      const geminiMessages = updatedMessages.map(({ role, content }) => ({
-        role,
-        content,
-      }));
-
-      const assistantText = await fetchFullResponse(
-        geminiMessages,
-        buildSystemPrompt(profile)
-      );
-
+      const geminiMessages = msgList.map(({ role, content }) => ({ role, content }));
+      const assistantText = await fetchFullResponse(geminiMessages, buildSystemPrompt(profile));
       setLoading(false);
 
       animateText(assistantText, (fullText) => {
@@ -159,6 +139,31 @@ export default function ChatWindow({ initialMessages, onMessagesChange, onMenuCl
       setLoading(false);
       setError(e.message || "Something went wrong. Please try again.");
     }
+  }
+
+  const sendMessage = async (text) => {
+    const userText = text || input.trim();
+    if (!userText || loading || isStreaming) return;
+
+    setInput("");
+    const userMsg = { role: "user", content: userText, id: Date.now() };
+    const updatedMessages = [...messages, userMsg];
+    setMessages(updatedMessages);
+    await dispatch(updatedMessages);
+  };
+
+  // Retry: slice history up to and including the chosen user message,
+  // drop any assistant reply that followed, re-send
+  const handleRetry = (msgId) => {
+    if (loading || isStreaming) return;
+
+    const idx = messages.findIndex((m) => m.id === msgId);
+    if (idx === -1) return;
+
+    // Keep everything up to and including this user message
+    const sliced = messages.slice(0, idx + 1);
+    setMessages(sliced);
+    dispatch(sliced);
   };
 
   const handleKey = (e) => {
@@ -214,8 +219,19 @@ export default function ChatWindow({ initialMessages, onMessagesChange, onMenuCl
             <EmptyState onSuggest={sendMessage} />
           ) : (
             <>
-              {messages.map((msg) => (
-                <MessageBubble key={msg.id} message={msg} />
+            {messages.map((msg, idx) => (
+                            <MessageBubble
+                              key={msg.id}
+                              message={msg}
+                              onRetry={
+                                msg.role === "assistant" &&
+                                idx === messages.length - 1 &&
+                                !loading &&
+                                !isStreaming
+                                  ? () => handleRetry(msg.id)
+                                  : null
+                              }
+                            />
               ))}
               {loading && <TypingIndicator />}
               {isStreaming && streamingText && (
@@ -278,7 +294,14 @@ function EmptyState({ onSuggest }) {
         </p>
       </div>
       <SuggestionChips
-        suggestions={SUGGESTIONS}
+        suggestions={[
+          "How do I start budgeting?",
+          "Explain the 50/30/20 rule",
+          "How to build an emergency fund?",
+          "Debt avalanche vs snowball?",
+          "How does a SIP work?",
+          "Tips to improve my credit score",
+        ]}
         onSelect={onSuggest}
         grid
       />
